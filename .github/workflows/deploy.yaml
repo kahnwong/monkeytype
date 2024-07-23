@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    name: Publish to Cloudflare Pages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # ---------- build ----------
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+      - name: "Install dependencies"
+        run: |
+          npm ci
+          npm install @rollup/rollup-linux-x64-gnu
+      - name: "Build"
+        run: |
+          export ENV BACKEND_URL=###MONKEYTYPE_BACKENDURL###
+          export RECAPTCHA_SITE_KEY=###RECAPTCHA_SITE_KEY###
+          cp docker/frontend/firebase-config-live.ts frontend/src/ts/constants/firebase-config.ts
+          cp docker/frontend/firebase-config-live.ts frontend/src/ts/constants/firebase-config-live.ts
+          npm run build-fe
+      # ---------- publish ----------
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/pages-action@1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID}}
+          projectName: monkeytype
+          directory: frontend/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
