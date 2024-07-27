@@ -1,8 +1,13 @@
-name: Deploy
+---
+name: Publish to Cloudflare Pages
 
 on:
   push:
     branches: [master]
+
+env:
+  PROJECT_NAME: monkeytype
+  BUILD_DIR: frontend/dist
 
 jobs:
   deploy:
@@ -33,10 +38,8 @@ jobs:
           npm run build-fe
       # ---------- publish ----------
       - name: Publish to Cloudflare Pages
-        uses: cloudflare/pages-action@1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID}}
-          projectName: monkeytype
-          directory: frontend/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ${{ env.BUILD_DIR }} --project-name=${{ env.PROJECT_NAME }}
