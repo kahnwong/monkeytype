@@ -28,7 +28,16 @@
     },
     "@monkeytype/frontend#build": {
       "dependsOn": ["^build"],
-      "env": ["BACKEND_URL", "RECAPTCHA_SITE_KEY"]
+      "env": ["BACKEND_URL", "RECAPTCHA_SITE_KEY"],
+      "outputs": ["dist/**"]
+    },
+    "@monkeytype/frontend#dev": {
+      "dependsOn": ["^build"],
+      "env": ["BACKEND_URL", "RECAPTCHA_SITE_KEY", "SERVER_OPEN"]
+    },
+    "@monkeytype/backend#dev": {
+      "dependsOn": ["^build"],
+      "env": ["DB_URI", "REDIS_URI", "PORT"]
     }
   }
 }
