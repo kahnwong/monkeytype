@@ -7,6 +7,7 @@ import {
   TestActivityCalendar,
   TestActivityMonth,
 } from "./test-activity-calendar";
+import { safeNumber } from "@monkeytype/util/numbers";
 
 let yearSelector: SlimSelect | undefined = undefined;
 
@@ -21,7 +22,11 @@ export function init(
   $("#testActivity").removeClass("hidden");
 
   yearSelector = getYearSelector();
-  initYearSelector("current", userSignUpDate?.getFullYear() || 2022);
+  initYearSelector(
+    "current",
+    safeNumber(userSignUpDate?.getFullYear()) ?? 2022
+  );
+  updateLabels(calendar.firstDayOfWeek);
   update(calendar);
 }
 
@@ -127,4 +132,41 @@ function getYearSelector(): SlimSelect {
     },
   });
   return yearSelector;
+}
+
+const daysDisplay = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+function updateLabels(firstDayOfWeek: number): void {
+  const days: (string | undefined)[] = [];
+  for (let i = 0; i < 7; i++) {
+    days.push(
+      i % 2 !== firstDayOfWeek % 2
+        ? daysDisplay[(firstDayOfWeek + i) % 7]
+        : undefined
+    );
+  }
+
+  const buildHtml = (maxLength?: number): string => {
+    const shorten =
+      maxLength !== undefined
+        ? (it: string) => it.substring(0, maxLength)
+        : (it: string) => it;
+    return days
+      .map((it) =>
+        it !== undefined
+          ? `<div><div class="text">${shorten(it)}</div></div>`
+          : "<div></div>"
+      )
+      .join("");
+  };
+
+  $("#testActivity .daysFull").html(buildHtml());
+  $("#testActivity .days").html(buildHtml(3));
 }

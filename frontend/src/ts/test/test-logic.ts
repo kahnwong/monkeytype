@@ -13,6 +13,7 @@ import * as CustomTextState from "../states/custom-text-name";
 import * as TestStats from "./test-stats";
 import * as PractiseWords from "./practise-words";
 import * as ShiftTracker from "./shift-tracker";
+import * as AltTracker from "./alt-tracker";
 import * as Focus from "./focus";
 import * as Funbox from "./funbox/funbox";
 import * as Keymap from "../elements/keymap";
@@ -61,11 +62,23 @@ import { QuoteLength } from "@monkeytype/contracts/schemas/configs";
 import { Mode } from "@monkeytype/contracts/schemas/shared";
 import {
   CompletedEvent,
-  CustomTextDataWithTextLen,
+  CompletedEventCustomText,
 } from "@monkeytype/contracts/schemas/results";
 import * as XPBar from "../elements/xp-bar";
-import { getActiveFunboxes } from "./funbox/list";
-import { getFunboxesFromString } from "@monkeytype/funbox";
+import {
+  findSingleActiveFunboxWithFunction,
+  getActiveFunboxes,
+  getActiveFunboxesWithFunction,
+} from "./funbox/list";
+import { getFunbox } from "@monkeytype/funbox";
+import * as CompositionState from "../states/composition";
+import { SnapshotResult } from "../constants/default-snapshot";
+import { WordGenError } from "../utils/word-gen-error";
+import { tryCatch } from "@monkeytype/util/trycatch";
+import { captureException } from "../sentry";
+import * as Loader from "../elements/loader";
+import * as TestInitFailed from "../elements/test-init-failed";
+import { canQuickRestart } from "../utils/quick-restart";
 
 let failReason = "";
 const koInputVisual = document.getElementById("koInputVisual") as HTMLElement;
@@ -79,7 +92,7 @@ export function clearNotSignedInResult(): void {
 export function setNotSignedInUidAndHash(uid: string): void {
   if (notSignedInLastResult === null) return;
   notSignedInLastResult.uid = uid;
-  //@ts-expect-error
+  //@ts-expect-error really need to delete this
   delete notSignedInLastResult.hash;
   notSignedInLastResult.hash = objectHash(notSignedInLastResult);
 }
@@ -107,8 +120,8 @@ export function startTest(now: number): boolean {
   TestTimer.clear();
   Monkey.show();
 
-  for (const fb of getActiveFunboxes()) {
-    fb.functions?.start?.();
+  for (const fb of getActiveFunboxesWithFunction("start")) {
+    fb.functions.start();
   }
 
   try {
@@ -158,7 +171,7 @@ export function restart(options = {} as RestartOptions): void {
     if (!ManualRestart.get()) {
       if (Config.mode !== "zen") event?.preventDefault();
       if (
-        !Misc.canQuickRestart(
+        !canQuickRestart(
           Config.mode,
           Config.words,
           Config.time,
@@ -249,6 +262,7 @@ export function restart(options = {} as RestartOptions): void {
   TestInput.restart();
   TestInput.corrected.reset();
   ShiftTracker.reset();
+  AltTracker.reset();
   Caret.hide();
   TestState.setActive(false);
   Replay.stopReplayRecording();
@@ -265,6 +279,7 @@ export function restart(options = {} as RestartOptions): void {
   MemoryFunboxTimer.reset();
   QuoteRateModal.clearQuoteStats();
   TestUI.reset();
+  CompositionState.setComposing(false);
 
   if (TestUI.resultVisible) {
     if (Config.randomTheme !== "off") {
@@ -286,7 +301,6 @@ export function restart(options = {} as RestartOptions): void {
     el = $("#typingTest");
   }
   TestUI.setResultVisible(false);
-  PageTransition.set(true);
   TestUI.setTestRestarting(true);
   el.stop(true, true).animate(
     {
@@ -296,7 +310,7 @@ export function restart(options = {} as RestartOptions): void {
     async () => {
       $("#result").addClass("hidden");
       $("#typingTest").css("opacity", 0).removeClass("hidden");
-      $("#wordsInput").val(" ");
+      $("#wordsInput").css({ left: 0 }).val(" ");
 
       if (Config.language.startsWith("korean")) {
         koInputVisual.innerText = " ";
@@ -326,11 +340,19 @@ export function restart(options = {} as RestartOptions): void {
 
       TestState.setRepeated(options.withSameWordset ?? false);
       TestState.setPaceRepeat(repeatWithPace);
-      await init();
+      TestInitFailed.hide();
+      TestState.setTestInitSuccess(true);
+      const initResult = await init();
+
+      if (initResult === null) {
+        TestUI.setTestRestarting(false);
+        return;
+      }
+
       await PaceCaret.init();
 
-      for (const fb of getActiveFunboxes()) {
-        fb.functions?.restart?.();
+      for (const fb of getActiveFunboxesWithFunction("restart")) {
+        fb.functions.restart();
       }
 
       if (Config.showAverage !== "off") {
@@ -359,10 +381,9 @@ export function restart(options = {} as RestartOptions): void {
             LiveSpeed.reset();
             LiveAcc.reset();
             LiveBurst.reset();
-            TestUI.setTestRestarting(false);
             TestUI.updatePremid();
             ManualRestart.reset();
-            PageTransition.set(false);
+            TestUI.setTestRestarting(false);
           }
         );
     }
@@ -371,44 +392,57 @@ export function restart(options = {} as RestartOptions): void {
   ResultWordHighlight.destroy();
 }
 
+let lastInitError: Error | null = null;
 let rememberLazyMode: boolean;
 let testReinitCount = 0;
-export async function init(): Promise<void> {
+export async function init(): Promise<void | null> {
   console.debug("Initializing test");
   testReinitCount++;
-  if (testReinitCount >= 4) {
+  if (testReinitCount > 3) {
+    if (lastInitError) {
+      captureException(lastInitError);
+      TestInitFailed.showError(
+        `${lastInitError.name}: ${lastInitError.message}`
+      );
+    }
+    TestInitFailed.show();
     TestUI.setTestRestarting(false);
-    Notifications.add(
-      "Too many test reinitialization attempts. Something is going very wrong. Please contact support.",
-      -1,
-      {
-        important: true,
-      }
-    );
-    return;
+    TestState.setTestInitSuccess(false);
+    Focus.set(false);
+    // Notifications.add(
+    //   "Too many test reinitialization attempts. Something is going very wrong. Please contact support.",
+    //   -1,
+    //   {
+    //     important: true,
+    //   }
+    // );
+    return null;
   }
 
   MonkeyPower.reset();
   Replay.stopReplayRecording();
   TestWords.words.reset();
-  TestUI.setActiveWordElementIndex(0);
+  TestState.setActiveWordIndex(0);
+  TestState.setRemovedUIWordCount(0);
   TestInput.input.resetHistory();
-  TestInput.input.resetCurrent();
+  TestInput.input.current = "";
 
-  let language;
-  try {
-    language = await JSONData.getLanguage(Config.language);
-  } catch (e) {
+  Loader.show();
+  const { data: language, error } = await tryCatch(
+    JSONData.getLanguage(Config.language)
+  );
+  Loader.hide();
+
+  if (error) {
     Notifications.add(
-      Misc.createErrorMessage(e, "Failed to load language"),
+      Misc.createErrorMessage(error, "Failed to load language"),
       -1
     );
   }
 
   if (!language || language.name !== Config.language) {
     UpdateConfig.setLanguage("english");
-    await init();
-    return;
+    return await init();
   }
 
   if (ActivePage.get() === "test") {
@@ -419,13 +453,6 @@ export async function init(): Promise<void> {
     if (Config.quoteLength.includes(-3) && !isAuthenticated()) {
       UpdateConfig.setQuoteLength(-1);
     }
-  }
-
-  if (Config.tapeMode !== "off" && language.rightToLeft) {
-    Notifications.add("This language does not support tape mode.", 0, {
-      important: true,
-    });
-    UpdateConfig.setTapeMode("off");
   }
 
   const allowLazyMode = !language.noLazyMode || Config.mode === "custom";
@@ -447,6 +474,21 @@ export async function init(): Promise<void> {
     console.debug("Custom text", CustomText.getData());
   }
 
+  console.log("Inializing test", {
+    language: {
+      ...language,
+      words: `${language.words.length} words`,
+    },
+    customText: {
+      ...CustomText.getData(),
+      text: `${CustomText.getText().length} words`,
+    },
+    mode: Config.mode,
+    mode2: Misc.getMode2(Config, null),
+    funbox: Config.funbox,
+    currentQuote: TestWords.currentQuote,
+  });
+
   let generatedWords: string[];
   let generatedSectionIndexes: number[];
   let wordsHaveTab = false;
@@ -458,11 +500,17 @@ export async function init(): Promise<void> {
     wordsHaveTab = gen.hasTab;
     wordsHaveNewline = gen.hasNewline;
   } catch (e) {
+    Loader.hide();
+    if (e instanceof WordGenError || e instanceof Error) {
+      lastInitError = e;
+    }
     console.error(e);
-    if (e instanceof WordsGenerator.WordGenError) {
-      Notifications.add(e.message, 0, {
-        important: true,
-      });
+    if (e instanceof WordGenError) {
+      if (e.message.length > 0) {
+        Notifications.add(e.message, 0, {
+          important: true,
+        });
+      }
     } else {
       Notifications.add(
         Misc.createErrorMessage(e, "Failed to generate words"),
@@ -473,11 +521,10 @@ export async function init(): Promise<void> {
       );
     }
 
-    await init();
-    return;
+    return await init();
   }
 
-  const beforeHasNumbers = TestWords.hasNumbers ? true : false;
+  const beforeHasNumbers = TestWords.hasNumbers;
 
   let hasNumbers = false;
 
@@ -540,6 +587,11 @@ export function areAllTestWordsGenerated(): boolean {
 
 //add word during the test
 export async function addWord(): Promise<void> {
+  if (Config.mode === "zen") {
+    TestUI.appendEmptyWordElement();
+    return;
+  }
+
   let bound = 100; // how many extra words to aim for AFTER the current word
   const funboxToPush = getActiveFunboxes()
     .find((f) => f.properties?.find((fp) => fp.startsWith("toPush")))
@@ -547,7 +599,7 @@ export async function addWord(): Promise<void> {
   const toPushCount = funboxToPush?.split(":")[1];
   if (toPushCount !== undefined) bound = +toPushCount - 1;
 
-  if (TestWords.words.length - TestInput.input.history.length > bound) {
+  if (TestWords.words.length - TestInput.input.getHistory().length > bound) {
     console.debug("Not adding word, enough words already");
     return;
   }
@@ -555,13 +607,9 @@ export async function addWord(): Promise<void> {
     console.debug("Not adding word, all words generated");
     return;
   }
-
-  const sectionFunbox = getActiveFunboxes().find(
-    (f) => f.functions?.pullSection
-  );
-
-  if (sectionFunbox?.functions?.pullSection) {
-    if (TestWords.words.length - TestWords.words.currentIndex < 20) {
+  const sectionFunbox = findSingleActiveFunboxWithFunction("pullSection");
+  if (sectionFunbox) {
+    if (TestWords.words.length - TestState.activeWordIndex < 20) {
       const section = await sectionFunbox.functions.pullSection(
         Config.language
       );
@@ -608,7 +656,10 @@ export async function addWord(): Promise<void> {
         e,
         "Error while getting next word. Please try again later"
       ),
-      -1
+      -1,
+      {
+        important: true,
+      }
     );
   }
 }
@@ -747,7 +798,7 @@ function buildCompletedEvent(
   const wpmCons = Numbers.roundTo2(Numbers.kogasa(stddev3 / avg3));
   const wpmConsistency = isNaN(wpmCons) ? 0 : wpmCons;
 
-  let customText: CustomTextDataWithTextLen | undefined = undefined;
+  let customText: CompletedEventCustomText | undefined = undefined;
   if (Config.mode === "custom") {
     const temp = CustomText.getData();
     customText = {
@@ -840,7 +891,7 @@ export async function finish(difficultyFailed = false): Promise<void> {
   if (TestInput.input.current.length !== 0) {
     TestInput.input.pushHistory();
     TestInput.corrected.pushHistory();
-    Replay.replayGetWordsList(TestInput.input.history);
+    Replay.replayGetWordsList(TestInput.input.getHistory());
   }
 
   TestInput.forceKeyup(now); //this ensures that the last keypress(es) are registered
@@ -1005,6 +1056,7 @@ export async function finish(difficultyFailed = false): Promise<void> {
     if (tt < 0) tt = 0;
     const acc = completedEvent.acc;
     TestStats.incrementIncompleteSeconds(tt);
+    TestStats.incrementRestartCount();
     TestStats.pushIncompleteTest(acc, tt);
   }
 
@@ -1014,7 +1066,7 @@ export async function finish(difficultyFailed = false): Promise<void> {
     // Let's update the custom text progress
     if (
       TestState.bailedOut ||
-      TestInput.input.history.length < TestWords.words.length
+      TestInput.input.getHistory().length < TestWords.words.length
     ) {
       // They bailed out
 
@@ -1195,7 +1247,7 @@ async function saveResult(
     // into a snapshot result - might not cuase issues but worth investigating
     const result = Misc.deepClone(
       completedEvent
-    ) as unknown as DB.SnapshotResult<Mode>;
+    ) as unknown as SnapshotResult<Mode>;
     result._id = data.insertedId;
     if (data.isPb !== undefined && data.isPb) {
       result.isPb = true;
@@ -1221,7 +1273,7 @@ async function saveResult(
       completedEvent.language,
       completedEvent.difficulty,
       completedEvent.lazyMode,
-      getFunboxesFromString(completedEvent.funbox)
+      getFunbox(completedEvent.funbox)
     );
 
     if (localPb !== undefined) {
@@ -1304,6 +1356,10 @@ export function fail(reason: string): void {
 }
 
 $(".pageTest").on("click", "#testModesNotice .textButton.restart", () => {
+  restart();
+});
+
+$(".pageTest").on("click", "#testInitFailed button.restart", () => {
   restart();
 });
 
@@ -1402,6 +1458,7 @@ $(".pageTest").on("click", "#testConfig .numbersMode.textButton", () => {
 
 $("header").on("click", "nav #startTestButton, #logo", () => {
   if (ActivePage.get() === "test") restart();
+  // Result.showConfetti();
 });
 
 // ===============================
@@ -1419,9 +1476,8 @@ ConfigEvent.subscribe((eventKey, eventValue, nosave) => {
       restart();
     }
     if (eventKey === "difficulty" && !nosave) restart();
-    if (eventKey === "showAllLines" && !nosave) restart();
     if (
-      eventKey === "customLayoutFluid" &&
+      eventKey === "customLayoutfluid" &&
       Config.funbox.includes("layoutfluid")
     ) {
       restart();

@@ -1,5 +1,4 @@
 import * as PageController from "./page-controller";
-import * as Leaderboards from "../elements/leaderboards";
 import * as TestUI from "../test/test-ui";
 import * as PageTransition from "../states/page-transition";
 import { Auth, isAuthenticated } from "../firebase";
@@ -60,15 +59,12 @@ const routes: Route[] = [
       void PageController.change("test");
     },
   },
-  // {
-  //   path: "/leaderboards",
-  //   load: (): void => {
-  //     if (ActivePage.get() === "loading") {
-  //       PageController.change(PageTest.page);
-  //     }
-  //     Leaderboards.show();
-  //   },
-  // },
+  {
+    path: "/leaderboards",
+    load: (): void => {
+      void PageController.change("leaderboards");
+    },
+  },
   {
     path: "/about",
     load: (): void => {
@@ -163,7 +159,18 @@ export function navigate(
   }
   url = url.replace(/\/$/, "");
   if (url === "") url = "/";
-  history.pushState(null, "", url);
+
+  // only push to history if we're navigating to a different URL
+  const currentUrl = new URL(window.location.href);
+  const targetUrl = new URL(url, window.location.origin);
+
+  if (
+    currentUrl.pathname + currentUrl.search + currentUrl.hash !==
+    targetUrl.pathname + targetUrl.search + targetUrl.hash
+  ) {
+    history.pushState(null, "", url);
+  }
+
   void router(options);
 }
 
@@ -200,8 +207,4 @@ document.addEventListener("DOMContentLoaded", () => {
       navigate(target.href);
     }
   });
-});
-
-$("#popups").on("click", "#leaderboards a.entryName", () => {
-  Leaderboards.hide();
 });

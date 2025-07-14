@@ -1,7 +1,4 @@
 <div class="page pageAccount hidden full-width" id="pageAccount">
-  <div class="scrollToTopButton invisible">
-    <i class="fas fa-angle-double-up"></i>
-  </div>
   <div class="preloader hidden">
     <div class="icon">
       <i class="fas fa-fw fa-spin fa-circle-notch"></i>
@@ -312,24 +309,8 @@
         </div>
         <div class="activity"></div>
         <div class="months"></div>
-        <div class="daysFull">
-          <div></div>
-          <div><div class="text">monday</div></div>
-          <div></div>
-          <div><div class="text">wednesday</div></div>
-          <div></div>
-          <div><div class="text">friday</div></div>
-          <div></div>
-        </div>
-        <div class="days">
-          <div></div>
-          <div><div class="text">mon</div></div>
-          <div></div>
-          <div><div class="text">wed</div></div>
-          <div></div>
-          <div><div class="text">fri</div></div>
-          <div></div>
-        </div>
+        <div class="daysFull"></div>
+        <div class="days"></div>
         <div class="nodata hidden">No data found.</div>
       </div>
     </div>
@@ -516,21 +497,42 @@
             <i class="fas fa-tag"></i>
             tags
           </div>
-          <div class="select filterGroup" group="tags"></div>
+          <div class="select filterGroup" group="tags">
+            <select
+              class="tagsSelect"
+              group="tags"
+              placeholder="select a tag"
+              multiple
+            ></select>
+          </div>
         </div>
         <div class="buttonsAndTitle funbox">
           <div class="title">
             <i class="fas fa-gamepad"></i>
             funbox
           </div>
-          <div class="select filterGroup" group="funbox"></div>
+          <div class="select filterGroup" group="funbox">
+            <select
+              class="funboxSelect"
+              group="funbox"
+              placeholder="select a funbox"
+              multiple
+            ></select>
+          </div>
         </div>
         <div class="buttonsAndTitle languages">
           <div class="title">
             <i class="fas fa-globe-americas"></i>
             language
           </div>
-          <div class="select filterGroup" group="language"></div>
+          <div class="select filterGroup" group="language">
+            <select
+              class="languageSelect"
+              group="language"
+              placeholder="select a language"
+              multiple
+            ></select>
+          </div>
         </div>
       </div>
     </div>

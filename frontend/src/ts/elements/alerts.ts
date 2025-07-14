@@ -29,6 +29,7 @@ const state: State = {
 
 function hide(): void {
   setNotificationBubbleVisible(false);
+  DB.updateInboxUnreadSize(0);
   void modal.hide({
     afterAnimation: async () => {
       $("#alertsPopup .notificationHistory .list").empty();
@@ -301,15 +302,16 @@ export function setNotificationBubbleVisible(tf: boolean): void {
 }
 
 function updateInboxSize(): void {
+  const remainingItems = accountAlerts.length - mailToDelete.length;
   $("#alertsPopup .accountAlerts .title .right").text(
-    `${accountAlerts.length}/${maxMail}`
+    `${remainingItems}/${maxMail}`
   );
 }
 
 function deleteAlert(id: string): void {
   mailToDelete.push(id);
   $(`#alertsPopup .accountAlerts .list .item[data-id="${id}"]`).remove();
-  if ($("#alertsPopup .accountAlerts .list .item").length == 0) {
+  if ($("#alertsPopup .accountAlerts .list .item").length === 0) {
     $("#alertsPopup .accountAlerts .list").html(`
     <div class="nothing">
     Nothing to show

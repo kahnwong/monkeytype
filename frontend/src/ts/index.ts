@@ -9,6 +9,8 @@ import "./event-handlers/test";
 import "./event-handlers/about";
 import "./event-handlers/settings";
 import "./event-handlers/account";
+import "./event-handlers/leaderboards";
+import "./event-handlers/login";
 
 import "./modals/google-sign-up";
 
@@ -27,13 +29,13 @@ import "./controllers/account-controller";
 import { enable } from "./states/glarses-mode";
 import "./test/caps-warning";
 import "./modals/simple-modals";
+import * as CookiesModal from "./modals/cookies";
 import "./controllers/input-controller";
 import "./ready";
 import "./controllers/route-controller";
 import "./pages/about";
 import "./elements/scroll-to-top";
 import * as Account from "./pages/account";
-import "./elements/leaderboards";
 import "./elements/no-css";
 import { egVideoListener } from "./popups/video-ad-popup";
 import "./states/connection";
@@ -44,10 +46,31 @@ import { isDevEnvironment } from "./utils/misc";
 import * as VersionButton from "./elements/version-button";
 import * as Focus from "./test/focus";
 import { getDevOptionsModal } from "./utils/async-modules";
+import * as Sentry from "./sentry";
+import * as Cookies from "./cookies";
+
+// Lock Math.random
+Object.defineProperty(Math, "random", {
+  value: Math.random,
+  writable: false,
+  configurable: false,
+  enumerable: true,
+});
+
+// Freeze Math object
+Object.freeze(Math);
+
+// Lock Math on window
+Object.defineProperty(window, "Math", {
+  value: Math,
+  writable: false,
+  configurable: false,
+  enumerable: true,
+});
 
 function addToGlobal(items: Record<string, unknown>): void {
   for (const [name, item] of Object.entries(items)) {
-    //@ts-expect-error
+    //@ts-expect-error dev
     window[name] = item;
   }
 }
@@ -55,6 +78,13 @@ function addToGlobal(items: Record<string, unknown>): void {
 void loadFromLocalStorage();
 void VersionButton.update();
 Focus.set(true, true);
+
+const accepted = Cookies.getAcceptedCookies();
+if (accepted === null) {
+  CookiesModal.show();
+} else {
+  Cookies.activateWhatsAccepted();
+}
 
 addToGlobal({
   snapshot: DB.getSnapshot,
@@ -68,6 +98,7 @@ addToGlobal({
   toggleUnsmoothedRaw: Result.toggleUnsmoothedRaw,
   egVideoListener: egVideoListener,
   toggleDebugLogs: Logger.toggleDebugLogs,
+  toggleSentryDebug: Sentry.toggleDebug,
 });
 
 if (isDevEnvironment()) {

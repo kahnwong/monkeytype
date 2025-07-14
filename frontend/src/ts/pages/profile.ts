@@ -10,6 +10,7 @@ import { UserProfile } from "@monkeytype/contracts/schemas/users";
 import { PersonalBests } from "@monkeytype/contracts/schemas/shared";
 
 function reset(): void {
+  $(".page.pageProfile .error").addClass("hidden");
   $(".page.pageProfile .preloader").removeClass("hidden");
   $(".page.pageProfile .profile").html(`
       <div class="details none">
@@ -218,7 +219,7 @@ $(".page.pageProfile").on("click", ".profile .userReportButton", () => {
 });
 
 export const page = new Page<undefined | UserProfile>({
-  name: "profile",
+  id: "profile",
   element: $(".page.pageProfile"),
   path: "/profile",
   afterHide: async (): Promise<void> => {

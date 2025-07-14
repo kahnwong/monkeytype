@@ -1,9 +1,8 @@
+import { getDefaultConfig } from "../../src/ts/constants/default-config";
 import { migrateConfig } from "../../src/ts/utils/config";
-import DefaultConfig from "../../src/ts/constants/default-config";
-import {
-  PartialConfig,
-  ShowAverageSchema,
-} from "@monkeytype/contracts/schemas/configs";
+import { PartialConfig } from "@monkeytype/contracts/schemas/configs";
+
+const defaultConfig = getDefaultConfig();
 
 describe("config.ts", () => {
   describe("migrateConfig", () => {
@@ -11,8 +10,8 @@ describe("config.ts", () => {
       const partialConfig = {} as PartialConfig;
 
       const result = migrateConfig(partialConfig);
-      expect(result).toEqual(expect.objectContaining(DefaultConfig));
-      for (const [key, value] of Object.entries(DefaultConfig)) {
+      expect(result).toEqual(expect.objectContaining(getDefaultConfig()));
+      for (const [key, value] of Object.entries(getDefaultConfig())) {
         expect(result).toHaveProperty(key, value);
       }
     });
@@ -22,7 +21,7 @@ describe("config.ts", () => {
       } as PartialConfig;
 
       const result = migrateConfig(partialConfig);
-      expect(result).toEqual(expect.objectContaining(DefaultConfig));
+      expect(result).toEqual(expect.objectContaining(getDefaultConfig()));
       expect(result).not.toHaveProperty("legacy");
     });
     it("should correctly merge properties of various types", () => {
@@ -39,8 +38,40 @@ describe("config.ts", () => {
       expect(result.time).toEqual(120);
       expect(result.accountChart).toEqual(["off", "off", "off", "off"]);
     });
-    it("should not convert legacy values if current values are already present", () => {
-      const testCases = [
+    describe("should replace value with default config if invalid", () => {
+      it.for([
+        {
+          given: { theme: "invalid" },
+          expected: { theme: defaultConfig.theme },
+        },
+        {
+          given: { minWpm: "invalid" },
+          expected: { minWpm: defaultConfig.minWpm },
+        },
+        {
+          given: { customThemeColors: ["#ffffff"] },
+          expected: { customThemeColors: defaultConfig.customThemeColors },
+        },
+        {
+          given: { accountChart: [true, false, false, true] },
+          expected: { accountChart: defaultConfig.accountChart },
+        },
+        {
+          given: {
+            favThemes: ["nord", "invalid", "serika_dark", "invalid2", "8008"],
+          },
+          expected: { favThemes: ["nord", "serika_dark", "8008"] },
+        },
+      ])(`$given`, ({ given, expected }) => {
+        const description = `given: ${JSON.stringify(
+          given
+        )}, expected: ${JSON.stringify(expected)} `;
+        const result = migrateConfig(given);
+        expect(result, description).toEqual(expect.objectContaining(expected));
+      });
+    });
+    describe("should not convert legacy values if current values are already present", () => {
+      it.for([
         {
           given: { showLiveAcc: true, timerStyle: "mini", liveAccStyle: "off" },
           expected: { liveAccStyle: "off" },
@@ -69,22 +100,19 @@ describe("config.ts", () => {
           given: { showTimerProgress: true, timerStyle: "mini" },
           expected: { timerStyle: "mini" },
         },
-      ];
+      ])(`$given`, ({ given, expected }) => {
+        //WHEN
 
-      //WHEN
-      testCases.forEach((test) => {
         const description = `given: ${JSON.stringify(
-          test.given
-        )}, expected: ${JSON.stringify(test.expected)} `;
+          given
+        )}, expected: ${JSON.stringify(expected)} `;
 
-        const result = migrateConfig(test.given);
-        expect(result, description).toEqual(
-          expect.objectContaining(test.expected)
-        );
+        const result = migrateConfig(given);
+        expect(result, description).toEqual(expect.objectContaining(expected));
       });
     });
-    it("should convert legacy values", () => {
-      const testCases = [
+    describe("should convert legacy values", () => {
+      it.for([
         { given: { quickTab: true }, expected: { quickRestart: "tab" } },
         { given: { smoothCaret: true }, expected: { smoothCaret: "medium" } },
         { given: { smoothCaret: false }, expected: { smoothCaret: "off" } },
@@ -143,18 +171,51 @@ describe("config.ts", () => {
           expected: { liveAccStyle: "mini" },
         },
         { given: { soundVolume: "0.5" }, expected: { soundVolume: 0.5 } },
-      ];
-
-      //WHEN
-      testCases.forEach((test) => {
+        { given: { funbox: "none" }, expected: { funbox: [] } },
+        {
+          given: { funbox: "58008#read_ahead" },
+          expected: { funbox: ["58008", "read_ahead"] },
+        },
+        {
+          given: { customLayoutfluid: "qwerty#qwertz" },
+          expected: { customLayoutfluid: ["qwerty", "qwertz"] },
+        },
+        { given: { indicateTypos: false }, expected: { indicateTypos: "off" } },
+        {
+          given: { indicateTypos: true },
+          expected: { indicateTypos: "replace" },
+        },
+        {
+          given: {
+            favThemes: ["purpurite", "80s_after_dark", "luna", "pulse"],
+          },
+          expected: {
+            favThemes: ["80s_after_dark", "luna", "pulse"],
+          },
+        },
+        {
+          given: { fontSize: "2" },
+          expected: { fontSize: 2 },
+        },
+        {
+          given: { fontSize: "15" },
+          expected: { fontSize: 1.5 },
+        },
+        {
+          given: { fontSize: "125" },
+          expected: { fontSize: 1.25 },
+        },
+        {
+          given: { fontSize: 15 },
+          expected: { fontSize: 15 },
+        },
+      ])(`$given`, ({ given, expected }) => {
         const description = `given: ${JSON.stringify(
-          test.given
-        )}, expected: ${JSON.stringify(test.expected)} `;
+          given
+        )}, expected: ${JSON.stringify(expected)} `;
 
-        const result = migrateConfig(test.given);
-        expect(result, description).toEqual(
-          expect.objectContaining(test.expected)
-        );
+        const result = migrateConfig(given);
+        expect(result, description).toEqual(expect.objectContaining(expected));
       });
     });
   });

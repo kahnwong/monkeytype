@@ -36,6 +36,7 @@ import { addImportantLog } from "./logs";
 import { Result as ResultType } from "@monkeytype/contracts/schemas/results";
 import { Configuration } from "@monkeytype/contracts/schemas/configuration";
 import { isToday, isYesterday } from "@monkeytype/util/date-and-time";
+import GeorgeQueue from "../queues/george-queue";
 
 export type DBUserTag = WithObjectId<UserTag>;
 
@@ -453,7 +454,12 @@ export async function checkIfPb(
   const { mode } = result;
 
   if (!canFunboxGetPb(result)) return false;
-  if ("stopOnLetter" in result && result.stopOnLetter === true) return false;
+  if (
+    "stopOnLetter" in result &&
+    result.stopOnLetter === true &&
+    result.acc < 100
+  )
+    return false;
 
   if (mode === "quote") {
     return false;
@@ -499,7 +505,12 @@ export async function checkIfTagPb(
 
   const { mode, tags: resultTags } = result;
   if (!canFunboxGetPb(result)) return [];
-  if ("stopOnLetter" in result && result.stopOnLetter === true) return [];
+  if (
+    "stopOnLetter" in result &&
+    result.stopOnLetter === true &&
+    result.acc < 100
+  )
+    return [];
 
   if (mode === "quote") {
     return [];
@@ -843,6 +854,7 @@ export async function recordAutoBanEvent(
   const user = await getPartialUser(uid, "record auto ban event", [
     "banned",
     "autoBanTimestamps",
+    "discordId",
   ]);
 
   let ret = false;
@@ -878,6 +890,15 @@ export async function recordAutoBanEvent(
     { autoBanTimestamps, banningUser },
     uid
   );
+
+  if (banningUser) {
+    const discordIdIsValid =
+      user.discordId !== undefined && user.discordId !== "";
+    if (discordIdIsValid) {
+      await GeorgeQueue.userBanned(user.discordId as string, true);
+    }
+  }
+
   return ret;
 }
 
@@ -1012,8 +1033,9 @@ export async function updateInbox(
               //flatMap rewards
               const rewards: AllRewards[] = [...toBeRead, ...toBeDeleted]
                 .filter((it) => !it.read)
-                .reduce((arr, current) => {
-                  return [...arr, ...current.rewards];
+
+                .reduce((arr: AllRewards[], current) => {
+                  return arr.concat(current.rewards);
                 }, []);
 
               const xpGain = rewards
@@ -1091,11 +1113,7 @@ export async function updateStreak(
   if (isYesterday(streak.lastResultTimestamp, streak.hourOffset ?? 0)) {
     streak.length += 1;
   } else if (!isToday(streak.lastResultTimestamp, streak.hourOffset ?? 0)) {
-    void addImportantLog(
-      "streak_lost",
-      JSON.parse(JSON.stringify(streak)) as Record<string, unknown>,
-      uid
-    );
+    void addImportantLog("streak_lost", streak, uid);
     streak.length = 1;
   }
 
@@ -1136,6 +1154,17 @@ export async function setBanned(uid: string, banned: boolean): Promise<void> {
   } else {
     await getUsersCollection().updateOne({ uid }, { $unset: { banned: "" } });
   }
+}
+
+export async function clearStreakHourOffset(uid: string): Promise<void> {
+  await getUsersCollection().updateOne(
+    { uid },
+    {
+      $unset: {
+        "streak.hourOffset": "",
+      },
+    }
+  );
 }
 
 export async function checkIfUserIsPremium(

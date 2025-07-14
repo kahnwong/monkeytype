@@ -16,7 +16,17 @@ import * as Arrays from "../utils/arrays";
 import * as TestState from "../test/test-state";
 import * as GetText from "../utils/generate";
 import { FunboxWordOrder, LanguageObject } from "../utils/json-data";
-import { getActiveFunboxes } from "./funbox/list";
+import {
+  findSingleActiveFunboxWithFunction,
+  getActiveFunboxes,
+  getActiveFunboxesWithFunction,
+  isFunboxActiveWithFunction,
+} from "./funbox/list";
+import { WordGenError } from "../utils/word-gen-error";
+import * as Loader from "../elements/loader";
+
+//pin implementation
+const random = Math.random;
 
 function shouldCapitalize(lastChar: string): boolean {
   return /[?!.؟]/.test(lastChar);
@@ -35,9 +45,8 @@ export async function punctuateWord(
 
   const lastChar = Strings.getLastChar(previousWord);
 
-  const funbox = getActiveFunboxes()?.find((fb) => fb.functions?.punctuateWord);
-
-  if (funbox?.functions?.punctuateWord) {
+  const funbox = findSingleActiveFunboxWithFunction("punctuateWord");
+  if (funbox) {
     return funbox.functions.punctuateWord(word);
   }
   if (
@@ -54,7 +63,7 @@ export async function punctuateWord(
     }
 
     if (currentLanguage === "spanish") {
-      const rand = Math.random();
+      const rand = random();
       if (rand > 0.9) {
         word = "¿" + word;
         spanishSentenceTracker = "?";
@@ -64,7 +73,7 @@ export async function punctuateWord(
       }
     }
   } else if (
-    (Math.random() < 0.1 &&
+    (random() < 0.1 &&
       lastChar !== "." &&
       lastChar !== "," &&
       index !== maxindex - 2) ||
@@ -76,7 +85,7 @@ export async function punctuateWord(
         spanishSentenceTracker = "";
       }
     } else {
-      const rand = Math.random();
+      const rand = random();
       if (rand <= 0.8) {
         if (currentLanguage === "kurdish") {
           word += ".";
@@ -128,14 +137,14 @@ export async function punctuateWord(
       }
     }
   } else if (
-    Math.random() < 0.01 &&
+    random() < 0.01 &&
     lastChar !== "," &&
     lastChar !== "." &&
     currentLanguage !== "russian"
   ) {
     word = `"${word}"`;
   } else if (
-    Math.random() < 0.011 &&
+    random() < 0.011 &&
     lastChar !== "," &&
     lastChar !== "." &&
     currentLanguage !== "russian" &&
@@ -143,9 +152,9 @@ export async function punctuateWord(
     currentLanguage !== "slovak"
   ) {
     word = `'${word}'`;
-  } else if (Math.random() < 0.012 && lastChar !== "," && lastChar !== ".") {
+  } else if (random() < 0.012 && lastChar !== "," && lastChar !== ".") {
     if (currentLanguage === "code") {
-      const r = Math.random();
+      const r = random();
       const brackets = ["()", "{}", "[]", "<>"];
 
       // add `word` in javascript
@@ -166,7 +175,7 @@ export async function punctuateWord(
       word = `(${word})`;
     }
   } else if (
-    Math.random() < 0.013 &&
+    random() < 0.013 &&
     lastChar !== "," &&
     lastChar !== "." &&
     lastChar !== ";" &&
@@ -177,22 +186,20 @@ export async function punctuateWord(
   ) {
     if (currentLanguage === "french") {
       word = ":";
-    } else if (currentLanguage === "greek") {
-      word = "·";
     } else if (currentLanguage === "chinese") {
       word += "：";
     } else {
       word += ":";
     }
   } else if (
-    Math.random() < 0.014 &&
+    random() < 0.014 &&
     lastChar !== "," &&
     lastChar !== "." &&
     previousWord !== "-"
   ) {
     word = "-";
   } else if (
-    Math.random() < 0.015 &&
+    random() < 0.015 &&
     lastChar !== "," &&
     lastChar !== "." &&
     lastChar !== ";" &&
@@ -203,7 +210,10 @@ export async function punctuateWord(
     if (currentLanguage === "french") {
       word = ";";
     } else if (currentLanguage === "greek") {
-      word = "·";
+      // Normally U+00B7 ('middle dot' or 'ano teleia') would be used here.
+      // However, a) it has fallen into disuse in contemporary times and
+      // b) there isn't a dedicated key on a keyboard to input it
+      word = ".";
     } else if (currentLanguage === "arabic" || currentLanguage === "kurdish") {
       word += "؛";
     } else if (currentLanguage === "chinese") {
@@ -211,7 +221,7 @@ export async function punctuateWord(
     } else {
       word += ";";
     }
-  } else if (Math.random() < 0.2 && lastChar !== ",") {
+  } else if (random() < 0.2 && lastChar !== ",") {
     if (
       currentLanguage === "arabic" ||
       currentLanguage === "urdu" ||
@@ -226,7 +236,7 @@ export async function punctuateWord(
     } else {
       word += ",";
     }
-  } else if (Math.random() < 0.25 && currentLanguage === "code") {
+  } else if (random() < 0.25 && currentLanguage === "code") {
     const specials = ["{", "}", "[", "]", "(", ")", ";", "=", "+", "%", "/"];
     const specialsC = [
       "{",
@@ -277,7 +287,7 @@ export async function punctuateWord(
       }
     }
   } else if (
-    Math.random() < 0.5 &&
+    random() < 0.5 &&
     currentLanguage === "english" &&
     (await EnglishPunctuation.check(word))
   ) {
@@ -301,10 +311,8 @@ async function applyEnglishPunctuationToWord(word: string): Promise<string> {
 }
 
 function getFunboxWordsFrequency(): Wordset.FunboxWordsFrequency | undefined {
-  const funbox = getActiveFunboxes().find(
-    (fb) => fb.functions?.getWordsFrequencyMode
-  );
-  if (funbox?.functions?.getWordsFrequencyMode) {
+  const funbox = findSingleActiveFunboxWithFunction("getWordsFrequencyMode");
+  if (funbox) {
     return funbox.functions.getWordsFrequencyMode();
   }
   return undefined;
@@ -313,9 +321,9 @@ function getFunboxWordsFrequency(): Wordset.FunboxWordsFrequency | undefined {
 async function getFunboxSection(): Promise<string[]> {
   const ret = [];
 
-  const funbox = getActiveFunboxes().find((fb) => fb.functions?.pullSection);
+  const funbox = findSingleActiveFunboxWithFunction("pullSection");
 
-  if (funbox?.functions?.pullSection) {
+  if (funbox) {
     const section = await funbox.functions.pullSection(Config.language);
 
     if (section === false || section === undefined) {
@@ -338,9 +346,9 @@ function getFunboxWord(
   wordIndex: number,
   wordset?: Wordset.Wordset
 ): string {
-  const funbox = getActiveFunboxes()?.find((fb) => fb.functions?.getWord);
+  const funbox = findSingleActiveFunboxWithFunction("getWord");
 
-  if (funbox?.functions?.getWord) {
+  if (funbox) {
     word = funbox.functions.getWord(wordset, wordIndex);
   }
   return word;
@@ -351,10 +359,8 @@ function applyFunboxesToWord(
   wordIndex: number,
   wordsBound: number
 ): string {
-  for (const fb of getActiveFunboxes()) {
-    if (fb.functions?.alterText) {
-      word = fb.functions.alterText(word, wordIndex, wordsBound);
-    }
+  for (const fb of getActiveFunboxesWithFunction("alterText")) {
+    word = fb.functions.alterText(word, wordIndex, wordsBound);
   }
   return word;
 }
@@ -397,7 +403,7 @@ export function getWordOrder(): FunboxWordOrder {
   }
 }
 
-export function getWordsLimit(): number {
+export function getLimit(): number {
   if (Config.mode === "zen") {
     return 0;
   }
@@ -474,13 +480,6 @@ export function getWordsLimit(): number {
   return limit;
 }
 
-export class WordGenError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "WordGenError";
-  }
-}
-
 async function getQuoteWordList(
   language: LanguageObject,
   wordOrder?: FunboxWordOrder
@@ -504,10 +503,12 @@ async function getQuoteWordList(
     ? "german"
     : language.name;
 
+  Loader.show();
   const quotesCollection = await QuotesController.getQuotes(
     languageToGet,
     Config.quoteLength
   );
+  Loader.hide();
 
   if (quotesCollection.length === 0) {
     UpdateConfig.setMode("words");
@@ -609,11 +610,7 @@ export async function generateWords(
     hasNewline: false,
   };
 
-  const sectionFunbox = getActiveFunboxes().find(
-    (fb) => fb.functions?.pullSection
-  );
-  isCurrentlyUsingFunboxSection =
-    sectionFunbox?.functions?.pullSection !== undefined;
+  isCurrentlyUsingFunboxSection = isFunboxActiveWithFunction("pullSection");
 
   const wordOrder = getWordOrder();
   console.debug("Word order", wordOrder);
@@ -627,15 +624,20 @@ export async function generateWords(
     wordList = [];
   }
 
-  const limit = getWordsLimit();
-  console.debug("Words limit", limit);
+  const customAndUsingPipeDelimiter =
+    Config.mode === "custom" && CustomText.getPipeDelimiter();
+
+  const limit = getLimit();
+  console.debug(
+    `${customAndUsingPipeDelimiter ? "Section" : "Word"} limit ${limit}`
+  );
 
   if (wordOrder === "reverse") {
     wordList = wordList.reverse();
   }
 
-  const funbox = getActiveFunboxes().find((fb) => fb.functions?.withWords);
-  if (funbox?.functions?.withWords) {
+  const funbox = findSingleActiveFunboxWithFunction("withWords");
+  if (funbox) {
     currentWordset = await funbox.functions.withWords(wordList);
   } else {
     currentWordset = await Wordset.withWords(wordList);
@@ -659,11 +661,13 @@ export async function generateWords(
     ret.words.push(nextWord.word);
     ret.sectionIndexes.push(nextWord.sectionIndex);
 
-    if (Config.mode === "custom" && CustomText.getPipeDelimiter()) {
+    if (customAndUsingPipeDelimiter) {
+      //generate a given number of sections, make sure to not cut a section off
       const sectionFinishedAndOverLimit =
-        currentSection.length === 0 &&
-        sectionIndex >= CustomText.getLimitValue();
-      if (sectionFinishedAndOverLimit || ret.words.length >= limit) {
+        currentSection.length === 0 && sectionIndex >= limit;
+      //make sure we dont go over a hard limit, in cases where the sections are very large
+      const upperWordLimit = ret.words.length >= 100;
+      if (sectionFinishedAndOverLimit || upperWordLimit) {
         stop = true;
       }
     } else if (ret.words.length >= limit) {
@@ -748,6 +752,9 @@ export async function getNextWord(
         (Config.mode === "custom" &&
           CustomText.getLimitMode() === "word" &&
           wordIndex < CustomText.getLimitValue()) ||
+        (Config.mode === "custom" &&
+          CustomText.getLimitMode() === "section" &&
+          sectionIndex < CustomText.getLimitValue()) ||
         (Config.mode === "words" && wordIndex < Config.words)
       ) {
         continueRandomGeneration = true;
@@ -864,9 +871,7 @@ export async function getNextWord(
     throw new WordGenError("Random word contains spaces");
   }
 
-  const usingFunboxWithGetWord = getActiveFunboxes().some(
-    (fb) => fb.functions?.getWord
-  );
+  const usingFunboxWithGetWord = isFunboxActiveWithFunction("getWord");
 
   if (
     Config.mode !== "custom" &&
@@ -905,7 +910,7 @@ export async function getNextWord(
     );
   }
   if (Config.numbers) {
-    if (Math.random() < 0.1) {
+    if (random() < 0.1) {
       randomWord = GetText.getNumbers(4);
 
       if (Config.language.startsWith("kurdish")) {

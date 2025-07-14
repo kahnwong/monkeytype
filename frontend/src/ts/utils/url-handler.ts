@@ -11,7 +11,11 @@ import * as Loader from "../elements/loader";
 import * as AccountButton from "../elements/account-button";
 import { restart as restartTest } from "../test/test-logic";
 import * as ChallengeController from "../controllers/challenge-controller";
-import { Mode, Mode2 } from "@monkeytype/contracts/schemas/shared";
+import {
+  DifficultySchema,
+  Mode2Schema,
+  ModeSchema,
+} from "@monkeytype/contracts/schemas/shared";
 import {
   CustomBackgroundFilter,
   CustomBackgroundFilterSchema,
@@ -19,10 +23,13 @@ import {
   CustomBackgroundSizeSchema,
   CustomThemeColors,
   CustomThemeColorsSchema,
-  Difficulty,
+  FunboxSchema,
+  FunboxName,
 } from "@monkeytype/contracts/schemas/configs";
 import { z } from "zod";
 import { parseWithSchema as parseJsonWithSchema } from "@monkeytype/util/json";
+import { tryCatchSync } from "@monkeytype/util/trycatch";
+import { Language } from "@monkeytype/contracts/schemas/languages";
 
 export async function linkDiscord(hashOverride: string): Promise<void> {
   if (!hashOverride) return;
@@ -77,15 +84,12 @@ export function loadCustomThemeFromUrl(getOverride?: string): void {
   const getValue = Misc.findGetParameter("customTheme", getOverride);
   if (getValue === null) return;
 
-  let decoded: z.infer<typeof customThemeUrlDataSchema>;
-  try {
-    decoded = parseJsonWithSchema(atob(getValue), customThemeUrlDataSchema);
-  } catch (e) {
-    console.log("Custom theme URL decoding failed", e);
-    Notifications.add(
-      "Failed to load theme from URL: " + (e as Error).message,
-      0
-    );
+  const { data: decoded, error } = tryCatchSync(() =>
+    parseJsonWithSchema(atob(getValue), customThemeUrlDataSchema)
+  );
+  if (error) {
+    console.log("Custom theme URL decoding failed", error);
+    Notifications.add("Failed to load theme from URL: " + error.message, 0);
     return;
   }
 
@@ -129,24 +133,45 @@ export function loadCustomThemeFromUrl(getOverride?: string): void {
   }
 }
 
-type SharedTestSettings = [
-  Mode | null,
-  Mode2<Mode> | null,
-  CustomText.CustomTextData | null,
-  boolean | null,
-  boolean | null,
-  string | null,
-  Difficulty | null,
-  string | null
-];
+const TestSettingsSchema = z.tuple([
+  ModeSchema.nullable(),
+  Mode2Schema.nullable(),
+  CustomText.CustomTextSettingsSchema.partial({
+    pipeDelimiter: true,
+    limit: true,
+    mode: true,
+  })
+    //legacy values
+    .extend({
+      isTimeRandom: z.boolean().optional(),
+      isWordRandom: z.boolean().optional(),
+      word: z.number().int().optional(),
+      time: z.number().int().optional(),
+      delimiter: z.string().optional(),
+    })
+    .nullable(),
+  z.boolean().nullable(), //punctuation
+  z.boolean().nullable(), //numbers
+  z.string().nullable(), //language
+  DifficultySchema.nullable(),
+  FunboxSchema.or(z.string().nullable()), //funbox as array or legacy string as hash separated values
+]);
 
 export function loadTestSettingsFromUrl(getOverride?: string): void {
   const getValue = Misc.findGetParameter("testSettings", getOverride);
   if (getValue === null) return;
 
-  const de = JSON.parse(
-    decompressFromURI(getValue) ?? ""
-  ) as SharedTestSettings;
+  const { data: de, error } = tryCatchSync(() =>
+    parseJsonWithSchema(decompressFromURI(getValue) ?? "", TestSettingsSchema)
+  );
+  if (error) {
+    console.error("Failed to parse test settings:", error);
+    Notifications.add(
+      "Failed to load test settings from URL: " + error.message,
+      0
+    );
+    return;
+  }
 
   const applied: Record<string, string> = {};
 
@@ -155,12 +180,13 @@ export function loadTestSettingsFromUrl(getOverride?: string): void {
     applied["mode"] = de[0];
   }
 
+  const mode = de[0] ?? Config.mode;
   if (de[1] !== null) {
-    if (Config.mode === "time") {
+    if (mode === "time") {
       UpdateConfig.setTimeConfig(parseInt(de[1], 10), true);
-    } else if (Config.mode === "words") {
+    } else if (mode === "words") {
       UpdateConfig.setWordCount(parseInt(de[1], 10), true);
-    } else if (Config.mode === "quote") {
+    } else if (mode === "quote") {
       UpdateConfig.setQuoteLength(-2, false);
       TestState.setSelectedQuoteId(parseInt(de[1], 10));
       ManualRestart.set();
@@ -171,9 +197,34 @@ export function loadTestSettingsFromUrl(getOverride?: string): void {
   if (de[2] !== null) {
     const customTextSettings = de[2];
     CustomText.setText(customTextSettings.text);
-    CustomText.setLimitMode(customTextSettings.limit.mode);
-    CustomText.setLimitValue(customTextSettings.limit.value);
-    CustomText.setPipeDelimiter(customTextSettings.pipeDelimiter);
+
+    if (customTextSettings.limit !== undefined) {
+      CustomText.setLimitMode(customTextSettings.limit.mode);
+      CustomText.setLimitValue(customTextSettings.limit.value);
+    }
+    //convert legacy values
+    else {
+      if (customTextSettings.isWordRandom) {
+        CustomText.setLimitMode("word");
+      } else if (customTextSettings.isTimeRandom) {
+        CustomText.setLimitMode("time");
+      }
+      if (customTextSettings.word !== undefined) {
+        CustomText.setLimitValue(customTextSettings.word);
+      } else if (customTextSettings.time !== undefined) {
+        CustomText.setLimitValue(customTextSettings.time);
+      }
+    }
+
+    if (customTextSettings.pipeDelimiter) {
+      CustomText.setPipeDelimiter(customTextSettings.pipeDelimiter);
+    }
+    //convert legacy values
+    else if (customTextSettings.delimiter === "|") {
+      CustomText.setPipeDelimiter(true);
+    }
+
+    CustomText.setMode(customTextSettings.mode ?? "repeat");
 
     applied["custom text settings"] = "";
   }
@@ -189,7 +240,7 @@ export function loadTestSettingsFromUrl(getOverride?: string): void {
   }
 
   if (de[5] !== null) {
-    UpdateConfig.setLanguage(de[5], true);
+    UpdateConfig.setLanguage(de[5] as Language, true);
     applied["language"] = de[5];
   }
 
@@ -199,8 +250,15 @@ export function loadTestSettingsFromUrl(getOverride?: string): void {
   }
 
   if (de[7] !== null) {
-    UpdateConfig.setFunbox(de[7], true);
-    applied["funbox"] = de[7];
+    let val: FunboxName[] = [];
+    //convert legacy values
+    if (typeof de[7] === "string") {
+      val = de[7].split("#") as FunboxName[];
+    } else {
+      val = de[7];
+    }
+    UpdateConfig.setFunbox(val, true);
+    applied["funbox"] = val.join(", ");
   }
 
   restartTest({

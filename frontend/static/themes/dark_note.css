@@ -20,7 +20,7 @@
   --current-color: var(--main-color);
 }
 
-.button,
+.button:not(.accountButtonAndMenu *),
 #testConfig .row {
   --roundness: 5em; /* overwriting default roundness to make it softer */
 }
@@ -140,6 +140,18 @@ hint {
 
 #wordsWrapper .word:not(.active) letter.incorrect hint {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion) {
+  #words .word:has(~ .active) letter {
+    animation: none !important;
+    transform: scale(0.4);
+    color: transparent;
+  }
+  #words .word:has(~ .active) letter::after {
+    animation: none !important;
+    opacity: 1;
+  }
 }
 
 @keyframes fadeIn {

@@ -1,26 +1,28 @@
 import { intersect } from "@monkeytype/util/arrays";
-import { FunboxForcedConfig, FunboxName } from "./types";
+import { FunboxForcedConfig } from "./types";
 import { getFunbox } from "./list";
+import { FunboxName } from "@monkeytype/contracts/schemas/configs";
+import { safeNumber } from "@monkeytype/util/numbers";
 
 export function checkCompatibility(
   funboxNames: FunboxName[],
   withFunbox?: FunboxName
 ): boolean {
-  if (withFunbox === undefined || funboxNames.length === 0) return true;
+  if (funboxNames.length === 0) return true;
   let funboxesToCheck = getFunbox(funboxNames);
+
   if (withFunbox !== undefined) {
     funboxesToCheck = funboxesToCheck.concat(getFunbox(withFunbox));
   }
 
-  const allFunboxesAreValid = getFunbox(funboxNames).every(
-    (f) => f !== undefined
-  );
+  const allFunboxesAreValid = funboxesToCheck.every((f) => f !== undefined);
+  if (!allFunboxesAreValid) return false;
 
   const oneWordModifierMax =
     funboxesToCheck.filter(
       (f) =>
-        f.frontendFunctions?.includes("getWord") ??
-        f.frontendFunctions?.includes("pullSection") ??
+        f.frontendFunctions?.includes("getWord") ||
+        f.frontendFunctions?.includes("pullSection") ||
         f.frontendFunctions?.includes("withWords")
     ).length <= 1;
   const oneWordOrderMax =
@@ -87,10 +89,6 @@ export function checkCompatibility(
         (f.properties?.find((fp) => fp.startsWith("toPush:")) ?? "") ||
         f.frontendFunctions?.includes("pullSection")
     ).length <= 1;
-  const oneCssFileMax =
-    funboxesToCheck.filter((f) =>
-      f.properties?.find((fp) => fp === "hasCssFile")
-    ).length <= 1;
   const onePunctuateWordMax =
     funboxesToCheck.filter((f) =>
       f.frontendFunctions?.includes("punctuateWord")
@@ -106,6 +104,19 @@ export function checkCompatibility(
     funboxesToCheck.filter((f) =>
       f.properties?.find((fp) => fp === "changesCapitalisation")
     ).length <= 1;
+
+  const oneCssModificationPerElement = Object.values(
+    funboxesToCheck
+      .map((f) => f.cssModifications)
+      .filter((f) => f !== undefined)
+      .flat()
+      .reduce<Record<string, number>>((counts, cssModification) => {
+        counts[cssModification] =
+          (safeNumber(counts[cssModification]) ?? 0) + 1;
+        return counts;
+      }, {})
+  ).every((c) => c <= 1);
+
   const allowedConfig = {} as FunboxForcedConfig;
   let noConfigConflicts = true;
   for (const f of funboxesToCheck) {
@@ -131,7 +142,6 @@ export function checkCompatibility(
   }
 
   return (
-    allFunboxesAreValid &&
     oneWordModifierMax &&
     layoutUsability &&
     oneNospaceOrToPushMax &&
@@ -143,11 +153,11 @@ export function checkCompatibility(
     oneCanSpeakMax &&
     hasLanguageToSpeakAndNoUnspeakable &&
     oneToPushOrPullSectionMax &&
-    oneCssFileMax &&
     onePunctuateWordMax &&
     oneCharCheckerMax &&
     oneCharReplacerMax &&
     oneChangesCapitalisationMax &&
+    oneCssModificationPerElement &&
     noConfigConflicts &&
     oneWordOrderMax
   );

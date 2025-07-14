@@ -1,14 +1,14 @@
 import Config from "./config";
 import * as Caret from "./test/caret";
-import * as Notifications from "./elements/notifications";
 import * as CustomText from "./test/custom-text";
 import * as TestState from "./test/test-state";
 import * as ConfigEvent from "./observables/config-event";
 import { debounce, throttle } from "throttle-debounce";
 import * as TestUI from "./test/test-ui";
 import { get as getActivePage } from "./states/active-page";
-import { canQuickRestart, isDevEnvironment } from "./utils/misc";
+import { isDevEnvironment } from "./utils/misc";
 import { isCustomTextLong } from "./states/custom-text-name";
+import { canQuickRestart } from "./utils/quick-restart";
 
 let isPreviewingFont = false;
 export function previewFontFamily(font: string): void {
@@ -16,7 +16,7 @@ export function previewFontFamily(font: string): void {
     "--font",
     '"' + font.replace(/_/g, " ") + '", "Roboto Mono", "Vazirmatn"'
   );
-  void TestUI.updateHintsPosition();
+  void TestUI.updateHintsPositionDebounced();
   isPreviewingFont = true;
 }
 
@@ -48,7 +48,7 @@ function updateKeytips(): void {
   const commandKey = Config.quickRestart === "esc" ? "tab" : "esc";
   $("footer .keyTips").html(`
     ${
-      Config.quickRestart == "off"
+      Config.quickRestart === "off"
         ? "<key>tab</key> + <key>enter</key>"
         : `<key>${Config.quickRestart}</key>`
     } - restart test<br>
@@ -56,9 +56,6 @@ function updateKeytips(): void {
 }
 
 if (isDevEnvironment()) {
-  window.onerror = function (error): void {
-    Notifications.add(JSON.stringify(error), -1);
-  };
   $("header #logo .top").text("localhost");
   $("head title").text($("head title").text() + " (localhost)");
   $("body").append(
@@ -95,26 +92,20 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 const debouncedEvent = debounce(250, () => {
-  void Caret.updatePosition();
   if (getActivePage() === "test" && !TestUI.resultVisible) {
     if (Config.tapeMode !== "off") {
-      TestUI.scrollTape();
+      void TestUI.scrollTape();
     } else {
-      const word =
-        document.querySelectorAll<HTMLElement>("#words .word")[
-          TestUI.activeWordElementIndex - 1
-        ];
-      if (word) {
-        const currentTop: number = Math.floor(word.offsetTop);
-        TestUI.lineJump(currentTop);
+      void TestUI.centerActiveLine();
+      void TestUI.updateHintsPositionDebounced();
+    }
+    setTimeout(() => {
+      void TestUI.updateWordsInputPosition();
+      if ($("#wordsInput").is(":focus")) {
+        Caret.show(true);
       }
-    }
+    }, 250);
   }
-  setTimeout(() => {
-    if ($("#wordsInput").is(":focus")) {
-      Caret.show();
-    }
-  }, 250);
 });
 
 const throttledEvent = throttle(250, () => {
